@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AnalysisResult } from '../types';
+import { AnalysisResult, DATABASE_OPTIONS } from '../types';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import './OptimizationResults.css';
@@ -42,12 +42,17 @@ const OptimizationResults: React.FC<OptimizationResultsProps> = ({ result }) => 
   };
 
   const complexity = getComplexityLevel(result.complexity_score);
+  const selectedDatabase = DATABASE_OPTIONS.find(db => db.value === result.database_type);
 
   return (
     <div className="optimization-results">
       <div className="results-header">
         <h2>📊 Analysis Results</h2>
         <div className="query-summary">
+          <div className="database-badge">
+            <span className="database-icon">{selectedDatabase?.icon}</span>
+            <span className="database-name">{selectedDatabase?.label}</span>
+          </div>
           <div className="complexity-badge">
             <span className="complexity-label">Complexity:</span>
             <span className={`complexity-value ${complexity.color}`}>
@@ -57,8 +62,26 @@ const OptimizationResults: React.FC<OptimizationResultsProps> = ({ result }) => 
         </div>
       </div>
 
+      {/* Syntax Errors Section - Show prominently at the top */}
+      {result.syntax_errors && result.syntax_errors.length > 0 && (
+        <div className="syntax-errors-section">
+          <h3>❌ Syntax Errors</h3>
+          <div className="syntax-errors-list">
+            {result.syntax_errors.map((error, index) => (
+              <div key={index} className="syntax-error-item">
+                <span className="error-icon">🚨</span>
+                <span className="error-text">{error}</span>
+              </div>
+            ))}
+          </div>
+          <div className="syntax-error-notice">
+            <p>⚠️ Please fix the syntax errors above before proceeding with optimization analysis.</p>
+          </div>
+        </div>
+      )}
+
       <div className="analyzed-query-section">
-        <h3>🔍 Analyzed Query</h3>
+        <h3>🔍 Analyzed Query ({selectedDatabase?.label})</h3>
         <div className="query-display">
           <SyntaxHighlighter
             language="sql"
@@ -82,7 +105,7 @@ const OptimizationResults: React.FC<OptimizationResultsProps> = ({ result }) => 
           <div className="no-suggestions">
             <div className="success-icon">✅</div>
             <h4>Great job!</h4>
-            <p>No optimization issues found in your query. Your SQL looks good!</p>
+            <p>No optimization issues found in your {selectedDatabase?.label} query. Your SQL looks good!</p>
           </div>
         ) : (
           <div className="suggestions-list">
@@ -162,6 +185,12 @@ const OptimizationResults: React.FC<OptimizationResultsProps> = ({ result }) => 
           <span className="stat-label">Total Suggestions:</span>
           <span className="stat-value">{result.suggestions.length}</span>
         </div>
+        {result.syntax_errors && result.syntax_errors.length > 0 && (
+          <div className="stat-item">
+            <span className="stat-label">Syntax Errors:</span>
+            <span className="stat-value error">{result.syntax_errors.length}</span>
+          </div>
+        )}
         <div className="stat-item">
           <span className="stat-label">High Priority:</span>
           <span className="stat-value high">

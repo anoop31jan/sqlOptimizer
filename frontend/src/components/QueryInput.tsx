@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { AnalysisResult } from '../types';
+import { AnalysisResult, DATABASE_OPTIONS } from '../types';
 import './QueryInput.css';
 
 interface QueryInputProps {
@@ -15,6 +15,7 @@ const QueryInput: React.FC<QueryInputProps> = ({
   isLoading 
 }) => {
   const [query, setQuery] = useState('');
+  const [databaseType, setDatabaseType] = useState('mysql');
   const [error, setError] = useState<string | null>(null);
 
   const sampleQueries = [
@@ -36,6 +37,22 @@ WHERE id IN (SELECT user_id FROM orders WHERE total > 100)`
     {
       name: "Missing WHERE clause",
       query: `SELECT id, name, email FROM users ORDER BY created_at DESC`
+    },
+    {
+      name: "Syntax error example",
+      query: `selet * from users;`
+    },
+    {
+      name: "Database-specific (MySQL)",
+      query: `SELECT GROUP_CONCAT(name) FROM users GROUP BY department LIMIT 10`
+    },
+    {
+      name: "Database-specific (SQL Server)",
+      query: `SELECT TOP 10 * FROM users WITH (NOLOCK)`
+    },
+    {
+      name: "Database-specific (Oracle)",
+      query: `SELECT * FROM users WHERE ROWNUM <= 10`
     }
   ];
 
@@ -52,7 +69,8 @@ WHERE id IN (SELECT user_id FROM orders WHERE total > 100)`
 
     try {
       const response = await axios.post('/analyze', {
-        query: query.trim()
+        query: query.trim(),
+        database_type: databaseType
       });
       
       onAnalysisComplete(response.data);
@@ -60,6 +78,7 @@ WHERE id IN (SELECT user_id FROM orders WHERE total > 100)`
       setError(err.response?.data?.detail || 'Failed to analyze query');
       onAnalysisComplete({
         query: query.trim(),
+        database_type: databaseType,
         suggestions: [],
         complexity_score: 0,
         execution_plan_tips: []
@@ -77,18 +96,45 @@ WHERE id IN (SELECT user_id FROM orders WHERE total > 100)`
     setError(null);
   };
 
+  const selectedDatabase = DATABASE_OPTIONS.find(db => db.value === databaseType);
+
   return (
     <div className="query-input-container">
       <div className="query-input-section">
         <h2>📝 Enter Your SQL Query</h2>
         
         <form onSubmit={handleSubmit} className="query-form">
+          {/* Database Selection */}
+          <div className="database-selection">
+            <label htmlFor="database-type" className="database-label">
+              🗄️ Select Database Type:
+            </label>
+            <div className="database-dropdown">
+              <select
+                id="database-type"
+                value={databaseType}
+                onChange={(e) => setDatabaseType(e.target.value)}
+                className="database-select"
+                disabled={isLoading}
+              >
+                {DATABASE_OPTIONS.map((db) => (
+                  <option key={db.value} value={db.value}>
+                    {db.icon} {db.label}
+                  </option>
+                ))}
+              </select>
+              <div className="database-description">
+                {selectedDatabase?.description}
+              </div>
+            </div>
+          </div>
+
           <div className="textarea-container">
             <textarea
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Enter your SQL query here...
-Example: SELECT * FROM users WHERE age > 25"
+              placeholder={`Enter your ${selectedDatabase?.label} query here...
+Example: SELECT * FROM users WHERE age > 25`}
               className="query-textarea"
               rows={8}
               disabled={isLoading}
@@ -109,7 +155,7 @@ Example: SELECT * FROM users WHERE age > 25"
                 className="btn btn-primary"
                 disabled={isLoading || !query.trim()}
               >
-                {isLoading ? 'Analyzing...' : 'Analyze Query'}
+                {isLoading ? 'Analyzing...' : `Analyze ${selectedDatabase?.label} Query`}
               </button>
             </div>
           </div>

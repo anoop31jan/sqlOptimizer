@@ -20,6 +20,7 @@ app.add_middleware(
 
 class SQLQuery(BaseModel):
     query: str
+    database_type: str = Field(default="mysql", description="Database type: mysql, postgresql, oracle, sqlserver")
 
 class OptimizationSuggestion(BaseModel):
     type: str
@@ -31,13 +32,16 @@ class OptimizationSuggestion(BaseModel):
 
 class AnalysisResult(BaseModel):
     query: str
+    database_type: str
     suggestions: List[OptimizationSuggestion]
     complexity_score: int
     execution_plan_tips: List[str]
+    syntax_errors: List[str] = Field(default_factory=list)
 
 class SQLAnalyzer:
     def __init__(self):
         self.optimization_rules = {
+            'syntax_validation': self._check_syntax_errors,
             'select_star': self._check_select_star,
             'missing_where': self._check_missing_where,
             'non_sargable': self._check_non_sargable_conditions,
@@ -47,31 +51,239 @@ class SQLAnalyzer:
             'limit_clause': self._check_limit_clause,
             'order_by_optimization': self._check_order_by,
             'function_in_where': self._check_functions_in_where,
-            'unnecessary_distinct': self._check_unnecessary_distinct
+            'unnecessary_distinct': self._check_unnecessary_distinct,
+            'database_specific': self._check_database_specific_rules
+        }
+        
+        # Database-specific configurations
+        self.database_configs = {
+            'mysql': {
+                'limit_keyword': 'LIMIT',
+                'top_keyword': None,
+                'quote_char': '`',
+                'string_concat': 'CONCAT',
+                'date_functions': ['NOW()', 'CURDATE()', 'CURTIME()', 'DATE()', 'YEAR()', 'MONTH()', 'DAY()'],
+                'specific_functions': ['GROUP_CONCAT', 'IFNULL', 'IF'],
+                'supports_cte': True,
+                'supports_window_functions': True,
+                'max_index_length': 767,
+                'case_sensitive': False
+            },
+            'postgresql': {
+                'limit_keyword': 'LIMIT',
+                'top_keyword': None,
+                'quote_char': '"',
+                'string_concat': '||',
+                'date_functions': ['NOW()', 'CURRENT_DATE', 'CURRENT_TIME', 'DATE_PART()', 'EXTRACT()'],
+                'specific_functions': ['STRING_AGG', 'COALESCE', 'NULLIF'],
+                'supports_cte': True,
+                'supports_window_functions': True,
+                'max_index_length': None,
+                'case_sensitive': True
+            },
+            'oracle': {
+                'limit_keyword': None,
+                'top_keyword': None,
+                'quote_char': '"',
+                'string_concat': '||',
+                'date_functions': ['SYSDATE', 'CURRENT_DATE', 'SYSTIMESTAMP', 'EXTRACT()', 'TO_DATE()'],
+                'specific_functions': ['LISTAGG', 'NVL', 'NVL2', 'DECODE'],
+                'supports_cte': True,
+                'supports_window_functions': True,
+                'max_index_length': None,
+                'case_sensitive': False,
+                'uses_rownum': True,
+                'dual_table': True
+            },
+            'sqlserver': {
+                'limit_keyword': None,
+                'top_keyword': 'TOP',
+                'quote_char': '[',
+                'string_concat': '+',
+                'date_functions': ['GETDATE()', 'CURRENT_TIMESTAMP', 'DATEPART()', 'DATEDIFF()', 'YEAR()', 'MONTH()', 'DAY()'],
+                'specific_functions': ['STRING_AGG', 'ISNULL', 'IIF', 'CHOOSE'],
+                'supports_cte': True,
+                'supports_window_functions': True,
+                'max_index_length': 900,
+                'case_sensitive': False,
+                'uses_go': True
+            }
+        }
+        
+        # Common misspellings of SQL keywords (database-agnostic)
+        self.common_misspellings = {
+            'SELET': 'SELECT',
+            'SELCT': 'SELECT',
+            'SLECT': 'SELECT',
+            'SEELCT': 'SELECT',
+            'FORM': 'FROM',
+            'FRON': 'FROM',
+            'WHRE': 'WHERE',
+            'WHER': 'WHERE',
+            'WERE': 'WHERE',
+            'WEHRE': 'WHERE',
+            'JION': 'JOIN',
+            'JONIN': 'JOIN',
+            'JONI': 'JOIN',
+            'INNNER': 'INNER',
+            'INENR': 'INNER',
+            'LEFFT': 'LEFT',
+            'RIHGT': 'RIGHT',
+            'RIGTH': 'RIGHT',
+            'OERDER': 'ORDER',
+            'ORDRE': 'ORDER',
+            'ORDR': 'ORDER',
+            'GROPU': 'GROUP',
+            'GRPOU': 'GROUP',
+            'HAVIG': 'HAVING',
+            'HAVNG': 'HAVING',
+            'INSER': 'INSERT',
+            'INSRT': 'INSERT',
+            'UPDAT': 'UPDATE',
+            'UPDAE': 'UPDATE',
+            'DELET': 'DELETE',
+            'DELEET': 'DELETE',
+            'CREAT': 'CREATE',
+            'CRAETE': 'CREATE',
+            'DISTINC': 'DISTINCT',
+            'DISTINT': 'DISTINCT'
         }
     
-    def analyze_query(self, query: str) -> AnalysisResult:
-        # Parse the SQL query
-        parsed = sqlparse.parse(query)[0]
+    def analyze_query(self, query: str, database_type: str = "mysql") -> AnalysisResult:
+        # Validate database type
+        if database_type not in self.database_configs:
+            database_type = "mysql"  # Default fallback
+        
+        # Check for syntax errors first
+        syntax_errors = []
+        
+        try:
+            # Parse the SQL query
+            parsed = sqlparse.parse(query)[0]
+        except Exception as e:
+            syntax_errors.append(f"SQL parsing failed: {str(e)}")
+            # Return early with syntax errors
+            return AnalysisResult(
+                query=query,
+                database_type=database_type,
+                suggestions=[],
+                complexity_score=0,
+                execution_plan_tips=[],
+                syntax_errors=syntax_errors
+            )
         
         suggestions = []
         for rule_name, rule_func in self.optimization_rules.items():
             try:
-                rule_suggestions = rule_func(query, parsed)
-                if rule_suggestions:
-                    suggestions.extend(rule_suggestions)
+                if rule_name in ['syntax_validation', 'database_specific']:
+                    rule_result = rule_func(query, parsed, database_type)
+                    if isinstance(rule_result, list) and len(rule_result) > 0:
+                        if rule_name == 'syntax_validation' and isinstance(rule_result[0], str):
+                            # These are syntax errors
+                            syntax_errors.extend(rule_result)
+                        else:
+                            # These are optimization suggestions
+                            suggestions.extend(rule_result)
+                else:
+                    rule_suggestions = rule_func(query, parsed)
+                    if rule_suggestions:
+                        suggestions.extend(rule_suggestions)
             except Exception as e:
                 print(f"Error in rule {rule_name}: {e}")
         
         complexity_score = self._calculate_complexity(parsed)
-        execution_tips = self._generate_execution_tips(parsed)
+        execution_tips = self._generate_execution_tips(parsed, database_type)
         
         return AnalysisResult(
             query=query,
+            database_type=database_type,
             suggestions=suggestions,
             complexity_score=complexity_score,
-            execution_plan_tips=execution_tips
+            execution_plan_tips=execution_tips,
+            syntax_errors=syntax_errors
         )
+    
+    def _check_syntax_errors(self, query: str, parsed, database_type: str) -> List[str]:
+        syntax_errors = []
+        query_upper = query.upper()
+        db_config = self.database_configs[database_type]
+        
+        # Remove string literals and comments to avoid false positives
+        cleaned_query = re.sub(r"'[^']*'", "", query_upper)  # Remove single-quoted strings
+        cleaned_query = re.sub(r'"[^"]*"', "", cleaned_query)  # Remove double-quoted strings
+        cleaned_query = re.sub(r'--.*$', "", cleaned_query, flags=re.MULTILINE)  # Remove line comments
+        cleaned_query = re.sub(r'/\*.*?\*/', "", cleaned_query, flags=re.DOTALL)  # Remove block comments
+        
+        # Split query into tokens (words)
+        words = re.findall(r'\b[A-Z_][A-Z0-9_]*\b', cleaned_query)
+        
+        # Check for common misspellings
+        for word in words:
+            if word in self.common_misspellings:
+                correct_word = self.common_misspellings[word]
+                syntax_errors.append(f"Possible misspelling: '{word}' should be '{correct_word}'")
+        
+        # Database-specific syntax checks
+        if database_type == 'mysql':
+            # MySQL-specific checks
+            if 'TOP ' in query_upper:
+                syntax_errors.append("MySQL doesn't support TOP keyword. Use LIMIT instead.")
+            if re.search(r'\bROWNUM\b', query_upper):
+                syntax_errors.append("MySQL doesn't support ROWNUM. Use LIMIT for row limiting.")
+        
+        elif database_type == 'postgresql':
+            # PostgreSQL-specific checks
+            if 'TOP ' in query_upper:
+                syntax_errors.append("PostgreSQL doesn't support TOP keyword. Use LIMIT instead.")
+            if re.search(r'\bROWNUM\b', query_upper):
+                syntax_errors.append("PostgreSQL doesn't support ROWNUM. Use LIMIT and OFFSET for row limiting.")
+            if re.search(r'\bIFNULL\s*\(', query_upper):
+                syntax_errors.append("PostgreSQL doesn't support IFNULL. Use COALESCE instead.")
+        
+        elif database_type == 'oracle':
+            # Oracle-specific checks
+            if 'LIMIT ' in query_upper:
+                syntax_errors.append("Oracle doesn't support LIMIT keyword. Use ROWNUM or FETCH FIRST for row limiting.")
+            if 'AUTO_INCREMENT' in query_upper:
+                syntax_errors.append("Oracle doesn't support AUTO_INCREMENT. Use SEQUENCE and TRIGGER instead.")
+        
+        elif database_type == 'sqlserver':
+            # SQL Server-specific checks
+            if 'LIMIT ' in query_upper:
+                syntax_errors.append("SQL Server doesn't support LIMIT keyword. Use TOP or OFFSET-FETCH instead.")
+            if re.search(r'\bROWNUM\b', query_upper):
+                syntax_errors.append("SQL Server doesn't support ROWNUM. Use TOP or ROW_NUMBER() instead.")
+            if 'AUTO_INCREMENT' in query_upper:
+                syntax_errors.append("SQL Server doesn't support AUTO_INCREMENT. Use IDENTITY instead.")
+        
+        # Check for unmatched parentheses
+        open_parens = query.count('(')
+        close_parens = query.count(')')
+        if open_parens != close_parens:
+            syntax_errors.append(f"Unmatched parentheses: {open_parens} opening, {close_parens} closing")
+        
+        # Check for basic keyword order violations
+        if 'SELECT' in query_upper and 'FROM' in query_upper:
+            select_pos = query_upper.find('SELECT')
+            from_pos = query_upper.find('FROM')
+            if select_pos > from_pos:
+                syntax_errors.append("Invalid syntax: 'FROM' appears before 'SELECT'")
+        
+        # Check for WHERE after ORDER BY (common mistake)
+        if 'WHERE' in query_upper and 'ORDER BY' in query_upper:
+            where_pos = query_upper.find('WHERE')
+            order_pos = query_upper.find('ORDER BY')
+            if where_pos > order_pos:
+                syntax_errors.append("Invalid syntax: 'WHERE' clause should come before 'ORDER BY'")
+        
+        # Check for GROUP BY after ORDER BY
+        if 'GROUP BY' in query_upper and 'ORDER BY' in query_upper:
+            group_pos = query_upper.find('GROUP BY')
+            order_pos = query_upper.find('ORDER BY')
+            if group_pos > order_pos:
+                syntax_errors.append("Invalid syntax: 'GROUP BY' clause should come before 'ORDER BY'")
+        
+        return syntax_errors
     
     def _check_select_star(self, query: str, parsed) -> List[OptimizationSuggestion]:
         suggestions = []
@@ -333,6 +545,113 @@ SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id;
         
         return suggestions
     
+    def _check_database_specific_rules(self, query: str, parsed, database_type: str) -> List[OptimizationSuggestion]:
+        suggestions = []
+        query_upper = query.upper()
+        db_config = self.database_configs[database_type]
+        
+        # Database-specific optimization suggestions
+        if database_type == 'mysql':
+            # MySQL-specific optimizations
+            if 'MYISAM' not in query_upper and 'ENGINE' not in query_upper:
+                if 'CREATE TABLE' in query_upper:
+                    suggestions.append(OptimizationSuggestion(
+                        type="database-specific",
+                        severity="medium",
+                        title="Specify storage engine for MySQL",
+                        description="MySQL supports multiple storage engines with different characteristics",
+                        suggestion="Specify ENGINE=InnoDB for ACID compliance and foreign keys, or ENGINE=MyISAM for read-heavy workloads",
+                        example="CREATE TABLE users (...) ENGINE=InnoDB;"
+                    ))
+            
+            if 'GROUP_CONCAT' not in query_upper and re.search(r'GROUP\s+BY.*STRING_AGG', query_upper):
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="low",
+                    title="Use MySQL's GROUP_CONCAT instead of STRING_AGG",
+                    description="MySQL uses GROUP_CONCAT function for string aggregation",
+                    suggestion="Replace STRING_AGG with GROUP_CONCAT for MySQL compatibility",
+                    example="SELECT GROUP_CONCAT(name) FROM users GROUP BY department;"
+                ))
+        
+        elif database_type == 'postgresql':
+            # PostgreSQL-specific optimizations
+            if 'VACUUM' not in query_upper and 'DELETE' in query_upper:
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="medium",
+                    title="Consider VACUUM after large DELETE operations",
+                    description="PostgreSQL uses MVCC which can leave dead tuples after DELETE operations",
+                    suggestion="Run VACUUM or VACUUM ANALYZE after large DELETE operations to reclaim space",
+                    example="-- After large deletes:\nVACUUM ANALYZE table_name;"
+                ))
+            
+            if 'ILIKE' not in query_upper and re.search(r'UPPER\s*\(.*LIKE', query_upper):
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="low",
+                    title="Use ILIKE for case-insensitive searches in PostgreSQL",
+                    description="PostgreSQL's ILIKE operator provides case-insensitive pattern matching",
+                    suggestion="Use ILIKE instead of UPPER() with LIKE for better performance",
+                    example="WHERE name ILIKE '%john%' -- Instead of WHERE UPPER(name) LIKE '%JOHN%'"
+                ))
+        
+        elif database_type == 'oracle':
+            # Oracle-specific optimizations
+            if 'ROWNUM' not in query_upper and 'LIMIT' in query_upper:
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="high",
+                    title="Oracle doesn't support LIMIT - use ROWNUM or FETCH FIRST",
+                    description="Oracle uses different syntax for limiting result sets",
+                    suggestion="Use ROWNUM in WHERE clause or FETCH FIRST clause (Oracle 12c+)",
+                    example="""
+-- Oracle 11g and earlier:
+SELECT * FROM (SELECT * FROM users ORDER BY id) WHERE ROWNUM <= 10;
+-- Oracle 12c+:
+SELECT * FROM users ORDER BY id FETCH FIRST 10 ROWS ONLY;
+"""
+                ))
+            
+            if 'DUAL' not in query_upper and re.search(r'SELECT\s+\d', query_upper):
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="low",
+                    title="Use DUAL table for constant values in Oracle",
+                    description="Oracle requires a FROM clause, use DUAL for selecting constants",
+                    suggestion="Use FROM DUAL when selecting constant values or expressions",
+                    example="SELECT 1, 'test', SYSDATE FROM DUAL;"
+                ))
+        
+        elif database_type == 'sqlserver':
+            # SQL Server-specific optimizations
+            if 'NOLOCK' in query_upper:
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="high",
+                    title="Avoid NOLOCK hint in SQL Server",
+                    description="NOLOCK can cause dirty reads and inconsistent data",
+                    suggestion="Use READ UNCOMMITTED isolation level or snapshot isolation instead of NOLOCK",
+                    example="SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; -- Instead of WITH (NOLOCK)"
+                ))
+            
+            if 'TOP' not in query_upper and 'LIMIT' in query_upper:
+                suggestions.append(OptimizationSuggestion(
+                    type="database-specific",
+                    severity="high",
+                    title="SQL Server doesn't support LIMIT - use TOP or OFFSET-FETCH",
+                    description="SQL Server uses TOP keyword or OFFSET-FETCH clause for limiting results",
+                    suggestion="Use TOP for simple limits or OFFSET-FETCH for pagination",
+                    example="""
+-- Simple limit:
+SELECT TOP 10 * FROM users;
+-- Pagination:
+SELECT * FROM users ORDER BY id OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY;
+"""
+                ))
+        
+        return suggestions
+    
     def _calculate_complexity(self, parsed) -> int:
         query_str = str(parsed).upper()
         score = 0
@@ -351,9 +670,10 @@ SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id;
         
         return min(score, 100)  # Cap at 100
     
-    def _generate_execution_tips(self, parsed) -> List[str]:
+    def _generate_execution_tips(self, parsed, database_type: str) -> List[str]:
         tips = []
         query_str = str(parsed).upper()
+        db_config = self.database_configs[database_type]
         
         if "JOIN" in query_str:
             tips.append("Ensure JOIN conditions use indexed columns for better performance")
@@ -365,7 +685,32 @@ SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id;
             tips.append("Indexes on ORDER BY columns can eliminate sort operations")
         
         if "LIKE" in query_str:
-            tips.append("Consider full-text search for complex text searches")
+            if database_type == 'postgresql':
+                tips.append("Consider using PostgreSQL's full-text search (tsvector) for complex text searches")
+            elif database_type == 'mysql':
+                tips.append("Consider using MySQL's FULLTEXT indexes for complex text searches")
+            elif database_type == 'sqlserver':
+                tips.append("Consider using SQL Server's Full-Text Search for complex text searches")
+            else:
+                tips.append("Consider full-text search for complex text searches")
+        
+        # Database-specific tips
+        if database_type == 'mysql':
+            tips.append("Consider using MySQL's query cache for repeated queries")
+            if "InnoDB" not in query_str.upper():
+                tips.append("Use InnoDB storage engine for ACID compliance and better concurrency")
+        
+        elif database_type == 'postgresql':
+            tips.append("Use EXPLAIN ANALYZE to get actual execution statistics")
+            tips.append("Consider using PostgreSQL's partial indexes for filtered queries")
+        
+        elif database_type == 'oracle':
+            tips.append("Use Oracle's Cost-Based Optimizer hints if needed")
+            tips.append("Consider using Oracle's materialized views for complex aggregations")
+        
+        elif database_type == 'sqlserver':
+            tips.append("Use SQL Server's execution plans to identify bottlenecks")
+            tips.append("Consider using SQL Server's columnstore indexes for analytical queries")
         
         if len(tips) == 0:
             tips.append("Query looks straightforward - ensure your tables have appropriate indexes")
@@ -381,7 +726,7 @@ async def analyze_sql_query(query: SQLQuery):
         if not query.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        result = analyzer.analyze_query(query.query)
+        result = analyzer.analyze_query(query.query, query.database_type)
         return result
     
     except Exception as e:
