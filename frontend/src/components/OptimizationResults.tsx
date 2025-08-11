@@ -101,7 +101,14 @@ const OptimizationResults: React.FC<OptimizationResultsProps> = ({ result }) => 
       <div className="suggestions-section">
         <h3>💡 Optimization Suggestions</h3>
         
-        {result.suggestions.length === 0 ? (
+        {/* Check for syntax errors first */}
+        {result.syntax_errors && result.syntax_errors.length > 0 ? (
+          <div className="syntax-error-blocking">
+            <div className="blocking-icon">⚠️</div>
+            <h4>Optimization Analysis Blocked</h4>
+            <p>Please fix the syntax errors above before optimization analysis can be performed. The tool cannot provide reliable optimization suggestions for queries with syntax issues.</p>
+          </div>
+        ) : result.suggestions.length === 0 ? (
           <div className="no-suggestions">
             <div className="success-icon">✅</div>
             <h4>Great job!</h4>
@@ -181,34 +188,48 @@ const OptimizationResults: React.FC<OptimizationResultsProps> = ({ result }) => 
       )}
 
       <div className="summary-stats">
-        <div className="stat-item">
-          <span className="stat-label">Total Suggestions:</span>
-          <span className="stat-value">{result.suggestions.length}</span>
-        </div>
-        {result.syntax_errors && result.syntax_errors.length > 0 && (
-          <div className="stat-item">
-            <span className="stat-label">Syntax Errors:</span>
-            <span className="stat-value error">{result.syntax_errors.length}</span>
-          </div>
+        {/* Show different stats based on whether there are syntax errors */}
+        {result.syntax_errors && result.syntax_errors.length > 0 ? (
+          <>
+            <div className="stat-item">
+              <span className="stat-label">Syntax Errors:</span>
+              <span className="stat-value error">{result.syntax_errors.length}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Analysis Status:</span>
+              <span className="stat-value error">Blocked</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Action Required:</span>
+              <span className="stat-value error">Fix Syntax</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="stat-item">
+              <span className="stat-label">Total Suggestions:</span>
+              <span className="stat-value">{result.suggestions.length}</span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">High Priority:</span>
+              <span className="stat-value high">
+                {result.suggestions.filter(s => s.severity === 'high').length}
+              </span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Medium Priority:</span>
+              <span className="stat-value medium">
+                {result.suggestions.filter(s => s.severity === 'medium').length}
+              </span>
+            </div>
+            <div className="stat-item">
+              <span className="stat-label">Low Priority:</span>
+              <span className="stat-value low">
+                {result.suggestions.filter(s => s.severity === 'low').length}
+              </span>
+            </div>
+          </>
         )}
-        <div className="stat-item">
-          <span className="stat-label">High Priority:</span>
-          <span className="stat-value high">
-            {result.suggestions.filter(s => s.severity === 'high').length}
-          </span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Medium Priority:</span>
-          <span className="stat-value medium">
-            {result.suggestions.filter(s => s.severity === 'medium').length}
-          </span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-label">Low Priority:</span>
-          <span className="stat-value low">
-            {result.suggestions.filter(s => s.severity === 'low').length}
-          </span>
-        </div>
       </div>
     </div>
   );

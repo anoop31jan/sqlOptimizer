@@ -173,26 +173,41 @@ class SQLAnalyzer:
             )
         
         suggestions = []
-        for rule_name, rule_func in self.optimization_rules.items():
-            try:
-                if rule_name in ['syntax_validation', 'database_specific']:
-                    rule_result = rule_func(query, parsed, database_type)
-                    if isinstance(rule_result, list) and len(rule_result) > 0:
-                        if rule_name == 'syntax_validation' and isinstance(rule_result[0], str):
-                            # These are syntax errors
-                            syntax_errors.extend(rule_result)
-                        else:
-                            # These are optimization suggestions
-                            suggestions.extend(rule_result)
-                else:
-                    rule_suggestions = rule_func(query, parsed)
-                    if rule_suggestions:
-                        suggestions.extend(rule_suggestions)
-            except Exception as e:
-                print(f"Error in rule {rule_name}: {e}")
         
-        complexity_score = self._calculate_complexity(parsed)
-        execution_tips = self._generate_execution_tips(parsed, database_type)
+        # First, check for syntax errors
+        try:
+            rule_result = self._check_syntax_errors(query, parsed, database_type)
+            if isinstance(rule_result, list) and len(rule_result) > 0:
+                syntax_errors.extend(rule_result)
+        except Exception as e:
+            print(f"Error in syntax validation: {e}")
+        
+        # Only proceed with optimization analysis if there are no syntax errors
+        if len(syntax_errors) == 0:
+            for rule_name, rule_func in self.optimization_rules.items():
+                # Skip syntax_validation as we already processed it
+                if rule_name == 'syntax_validation':
+                    continue
+                    
+                try:
+                    if rule_name == 'database_specific':
+                        rule_result = rule_func(query, parsed, database_type)
+                        if rule_result:
+                            suggestions.extend(rule_result)
+                    else:
+                        rule_suggestions = rule_func(query, parsed)
+                        if rule_suggestions:
+                            suggestions.extend(rule_suggestions)
+                except Exception as e:
+                    print(f"Error in rule {rule_name}: {e}")
+        
+        # Calculate complexity and tips only if no syntax errors
+        if len(syntax_errors) == 0:
+            complexity_score = self._calculate_complexity(parsed)
+            execution_tips = self._generate_execution_tips(parsed, database_type)
+        else:
+            complexity_score = 0
+            execution_tips = ["Fix syntax errors before analyzing query performance"]
         
         return AnalysisResult(
             query=query,
