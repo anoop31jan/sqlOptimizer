@@ -39,8 +39,12 @@ WHERE id IN (SELECT user_id FROM orders WHERE total > 100)`
       query: `SELECT id, name, email FROM users ORDER BY created_at DESC`
     },
     {
-      name: "Syntax error example",
+      name: "Syntax error example (selet)",
       query: `selet * from users;`
+    },
+    {
+      name: "Syntax error example (fom)",
+      query: `select * fom users;`
     },
     {
       name: "Database-specific (MySQL)",

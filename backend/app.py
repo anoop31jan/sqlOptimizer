@@ -112,42 +112,211 @@ class SQLAnalyzer:
         
         # Common misspellings of SQL keywords (database-agnostic)
         self.common_misspellings = {
+            # SELECT variations
             'SELET': 'SELECT',
             'SELCT': 'SELECT',
             'SLECT': 'SELECT',
             'SEELCT': 'SELECT',
+            'SELECF': 'SELECT',
+            'SELECTT': 'SELECT',
+            
+            # FROM variations
             'FORM': 'FROM',
             'FRON': 'FROM',
+            'FOM': 'FROM',
+            'FOMR': 'FROM',
+            'FRMO': 'FROM',
+            'FORMT': 'FROM',
+            'FORMM': 'FROM',
+            
+            # WHERE variations
             'WHRE': 'WHERE',
             'WHER': 'WHERE',
             'WERE': 'WHERE',
             'WEHRE': 'WHERE',
+            'WHREE': 'WHERE',
+            'WHEREE': 'WHERE',
+            'WJERE': 'WHERE',
+            'WHEER': 'WHERE',
+            
+            # JOIN variations
             'JION': 'JOIN',
             'JONIN': 'JOIN',
             'JONI': 'JOIN',
+            'JOING': 'JOIN',
+            'JOINN': 'JOIN',
+            'JOING': 'JOIN',
+            
+            # INNER variations
             'INNNER': 'INNER',
             'INENR': 'INNER',
+            'INEER': 'INNER',
+            'INER': 'INNER',
+            
+            # LEFT/RIGHT variations
             'LEFFT': 'LEFT',
+            'LEST': 'LEFT',
             'RIHGT': 'RIGHT',
             'RIGTH': 'RIGHT',
+            'RIHT': 'RIGHT',
+            'RGHT': 'RIGHT',
+            
+            # ORDER variations
             'OERDER': 'ORDER',
             'ORDRE': 'ORDER',
             'ORDR': 'ORDER',
+            'ORDERR': 'ORDER',
+            'ODER': 'ORDER',
+            
+            # GROUP variations
             'GROPU': 'GROUP',
             'GRPOU': 'GROUP',
+            'GRUP': 'GROUP',
+            'GROUOP': 'GROUP',
+            'GROUPP': 'GROUP',
+            
+            # HAVING variations
             'HAVIG': 'HAVING',
             'HAVNG': 'HAVING',
+            'HAVIGN': 'HAVING',
+            'HAVINGG': 'HAVING',
+            'HAVEING': 'HAVING',
+            
+            # INSERT variations
             'INSER': 'INSERT',
             'INSRT': 'INSERT',
+            'INSERTT': 'INSERT',
+            'INSERTM': 'INSERT',
+            'INSERET': 'INSERT',
+            
+            # UPDATE variations
             'UPDAT': 'UPDATE',
             'UPDAE': 'UPDATE',
+            'UPDTE': 'UPDATE',
+            'UPDATEE': 'UPDATE',
+            'UPDASTE': 'UPDATE',
+            
+            # DELETE variations
             'DELET': 'DELETE',
             'DELEET': 'DELETE',
+            'DELETEE': 'DELETE',
+            'DLETE': 'DELETE',
+            'DELETET': 'DELETE',
+            
+            # CREATE variations
             'CREAT': 'CREATE',
             'CRAETE': 'CREATE',
+            'CRETE': 'CREATE',
+            'CREATEE': 'CREATE',
+            'CREATTE': 'CREATE',
+            
+            # DISTINCT variations
             'DISTINC': 'DISTINCT',
-            'DISTINT': 'DISTINCT'
+            'DISTINT': 'DISTINCT',
+            'DISTINCTT': 'DISTINCT',
+            'DISINCT': 'DISTINCT',
+            'DISTICT': 'DISTINCT',
+            
+            # Additional common SQL keywords
+            'WHITH': 'WITH',
+            'WIHT': 'WITH',
+            'WUITH': 'WITH',
+            'ASS': 'AS',
+            'ANDD': 'AND',
+            'ORR': 'OR',
+            'NOTT': 'NOT',
+            'INN': 'IN',
+            'EXSITS': 'EXISTS',
+            'EXIST': 'EXISTS',
+            'EXISTSS': 'EXISTS',
+            'BEETWEEN': 'BETWEEN',
+            'BETWEN': 'BETWEEN',
+            'BETWWEN': 'BETWEEN',
+            'LIEK': 'LIKE',
+            'LIKEE': 'LIKE',
+            'LIMITT': 'LIMIT',
+            'LIMT': 'LIMIT',
+            'TOPP': 'TOP',
+            'COUNTT': 'COUNT',
+            'COUT': 'COUNT',
+            'SUMM': 'SUM',
+            'AVGG': 'AVG',
+            'MAXX': 'MAX',
+            'MINN': 'MIN',
+            'TABLEE': 'TABLE',
+            'TABL': 'TABLE',
+            'INDEXX': 'INDEX',
+            'PRIMARLY': 'PRIMARY',
+            'PRIMAR': 'PRIMARY',
+            'KEYY': 'KEY',
+            'FORIGN': 'FOREIGN',
+            'FOREGIN': 'FOREIGN',
+            'REFRENCES': 'REFERENCES',
+            'REFERNCES': 'REFERENCES',
+            'UNIQUEE': 'UNIQUE',
+            'UNIQE': 'UNIQUE',
+            'DEFALT': 'DEFAULT',
+            'DEFAUILT': 'DEFAULT',
+            'NULLL': 'NULL',
+            'VARCHARR': 'VARCHAR',
+            'INTERGER': 'INTEGER',
+            'INTT': 'INT',
+            'DECMIAL': 'DECIMAL',
+            'BOOLENA': 'BOOLEAN',
+            'DATETIEM': 'DATETIME',
+            'TIMESTAMPP': 'TIMESTAMP',
+            'ASCX': 'ASC',
+            'DESCC': 'DESC'
         }
+        
+        # Core SQL keywords for fuzzy matching
+        self.sql_keywords = {
+            'SELECT', 'FROM', 'WHERE', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL', 'OUTER',
+            'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'EXISTS', 'LIKE', 'BETWEEN', 'IS', 'NULL',
+            'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'TOP', 'DISTINCT', 'COUNT', 'SUM',
+            'AVG', 'MAX', 'MIN', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'INSERT', 'INTO',
+            'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE', 'ALTER', 'DROP',
+            'INDEX', 'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'UNIQUE', 'CHECK',
+            'DEFAULT', 'VARCHAR', 'CHAR', 'TEXT', 'INT', 'INTEGER', 'DECIMAL', 'FLOAT',
+            'DOUBLE', 'DATE', 'DATETIME', 'TIMESTAMP', 'TIME', 'BOOLEAN', 'UNION', 'ALL',
+            'ASC', 'DESC', 'WITH'
+        }
+    
+    def _levenshtein_distance(self, s1: str, s2: str) -> int:
+        """Calculate Levenshtein distance between two strings"""
+        if len(s1) < len(s2):
+            return self._levenshtein_distance(s2, s1)
+        
+        if len(s2) == 0:
+            return len(s1)
+        
+        previous_row = list(range(len(s2) + 1))
+        for i, c1 in enumerate(s1):
+            current_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = previous_row[j + 1] + 1
+                deletions = current_row[j] + 1
+                substitutions = previous_row[j] + (c1 != c2)
+                current_row.append(min(insertions, deletions, substitutions))
+            previous_row = current_row
+        
+        return previous_row[-1]
+    
+    def _find_closest_keyword(self, word: str) -> tuple:
+        """Find the closest SQL keyword using fuzzy matching"""
+        word_upper = word.upper()
+        min_distance = float('inf')
+        closest_keyword = None
+        
+        # Only consider words that are close in length and have small edit distance
+        for keyword in self.sql_keywords:
+            if abs(len(word_upper) - len(keyword)) <= 2:  # Length difference <= 2
+                distance = self._levenshtein_distance(word_upper, keyword)
+                if distance <= 2 and distance < min_distance:  # Edit distance <= 2
+                    min_distance = distance
+                    closest_keyword = keyword
+        
+        return closest_keyword, min_distance
     
     def analyze_query(self, query: str, database_type: str = "mysql") -> AnalysisResult:
         # Validate database type
@@ -232,11 +401,22 @@ class SQLAnalyzer:
         # Split query into tokens (words)
         words = re.findall(r'\b[A-Z_][A-Z0-9_]*\b', cleaned_query)
         
-        # Check for common misspellings
+        # Check for common misspellings and fuzzy matches
+        checked_words = set()  # Avoid duplicate error messages
         for word in words:
+            if word in checked_words:
+                continue
+            checked_words.add(word)
+            
+            # First check exact matches in our misspelling dictionary
             if word in self.common_misspellings:
                 correct_word = self.common_misspellings[word]
                 syntax_errors.append(f"Possible misspelling: '{word}' should be '{correct_word}'")
+            # Then check if it's not a valid SQL keyword but close to one
+            elif word not in self.sql_keywords and len(word) >= 3:
+                closest_keyword, distance = self._find_closest_keyword(word)
+                if closest_keyword and distance <= 2:
+                    syntax_errors.append(f"Possible misspelling: '{word}' should be '{closest_keyword}'")
         
         # Database-specific syntax checks
         if database_type == 'mysql':
